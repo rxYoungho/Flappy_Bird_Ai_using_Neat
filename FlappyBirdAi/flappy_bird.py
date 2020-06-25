@@ -186,9 +186,22 @@ def draw_window(win, bird, pipes, base, score):
     bird.draw(win)
     pygame.display.update() 
 
-def main():
+def main(genomes, config): #eval genomes 이 Loop은 이제 genomoes들을 연속해서 받으며 진행됨
+    nets = []
+    ge = []
+    birds = [] #이제 새 한마리가 아니니 리스트형식으로 변경
+    
+    for g in genomes:
+        net = neat.nn.FeedForwardNetwork(g, config)
+        nets.append(net)
+        birds.append(Bird(230, 350))
+        g.fitness = 0
+        ge.append(g)
+
+
     win = pygame.display.set_mode((WIN_WIDTH, WIN_HEIGHT))
-    bird = Bird(230, 350) #starting position
+    # bird = Bird(230, 350) #starting position
+
     base = Base(730) #very bottom of the screen
     pipes = [Pipe(700)]
     run = True
@@ -207,27 +220,41 @@ def main():
         #바로 떨어지는걸 잡기위해 clock를 써서 느리게 떨어뜨릴거
         rem = []
         for pipe in pipes:
-            #계속 새로운 파이프가 나오게 하기 x축의 끝을 보면 바로 생성
-            if pipe.collide(bird):
-                pass
+            for x, bird in enumerate(birds):
+                #계속 새로운 파이프가 나오게 하기 x축의 끝을 보면 바로 생성
+                if pipe.collide(bird):
+                    # collide하는건 genome으로 받지않음
+                    ge[x].fitness -= 1 #파이프에 닿을때 마다 genome에서 닿은 새는 없애기
+                    birds.pop(x)
+                    nets.pop(x)
+                    ge.pop(x) 
+
+      #모든 새에 대해서 체크하는게 됨
+                if not pipe.passed and pipe.x < bird.x:
+                    pipe.passed = True
+                    add_pipe = True 
             if pipe.x + pipe.PIPE_TOP.get_width() < 0:
                 rem.append(pipe)
-            if not pipe.passed and pipe.x < bird.x:
-                pipe.passed = True
-                add_pipe = True
 
             pipe.move()
         if add_pipe:
+            #스코어랑 fitness레벨도 올려줌
             score += 1 #파이프 패스하면 스코어 1점
+            for g in ge:
+                g.fitness += 5 #통과하면 5점씩 올려줘서 베스트 fitness점수를 뽑게하기
             pipes.append(Pipe(700)) #이거 숫자바꾸면 좀더 빠르게 나타남
 
         #지나가면 지우기
         for r in rem:
             pipes.remove(r)
 
-        if bird.y + bird.img.get_height() > 730:
-            #hit the floor
-            pass
+        for x, bird in enumerate(birds):
+            if bird.y + bird.img.get_height() > 730:
+                #hit the floor
+                #땅에 닿은 새를 위에처럼 없애줌
+                birds.pop(x)
+                nets.pop(x)
+                ge.pop(x)
 
         base.move()
         draw_window(win, bird, pipes, base, score)
@@ -236,3 +263,26 @@ def main():
     quit()
 
 main()
+
+
+def run():
+    config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction, 
+                                neat.DefaultSpeciesSet, neat.DefaultStagnation, config_path)
+
+#neat.Neat는 어차피 사용돼서 안불러도 됨
+    p = neat.Population(config) #setting population
+    #statistic 보려면
+    p.add_reporter(neat.StdOutReporter(True))
+    stats = neat.StatisticsReporter()
+    p.add_reporter(stats)
+    #fitness는 가장 오래동안 살아남은 놈이 될거임 또는 가장 멀리 간 친구
+    #set fitness function -> how many generations? 50
+    winner = p.run(main,50) #call main 50 times and send all of the genomes
+
+
+
+if __name__ == "__main__":
+    #directory로 이어주는것
+    local_dir = os.path.dirname(__file__)
+    config_path = os.path.join(local_dir, "config_feedforward.txt") #absolute path
+    run(config_path)
